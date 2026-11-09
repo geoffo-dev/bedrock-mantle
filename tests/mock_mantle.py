@@ -5,7 +5,8 @@ It emulates:
   POST /v1/chat/completions, /openai/v1/chat/completions          (OpenAI chat, JSON or SSE)
   POST /v1/responses, /openai/v1/responses                          (OpenAI Responses, JSON or SSE)
   POST /anthropic/v1/messages[/count_tokens]                        (Anthropic Messages, JSON or SSE)
-  POST /model/{model_id}/invoke                                     (Titan / Cohere embeddings)
+  POST /model/{model_id}/invoke                                     (Titan / Cohere embeddings, Claude)
+  POST /model/{model_id}/invoke-with-response-stream                (Claude, AWS event stream)
 
 Every request is recorded in app.state.calls so tests can assert on what the gateway sent.
 Run standalone:  uvicorn tests.mock_mantle:app --port 9000
@@ -13,8 +14,11 @@ Run standalone:  uvicorn tests.mock_mantle:app --port 9000
 
 from __future__ import annotations
 
+import base64
 import json
+import struct
 import time
+import zlib
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -36,6 +40,22 @@ EXPIRED_TOKEN = "expired-token"
 def _sse(obj: dict, event: str | None = None) -> str:
     head = f"event: {event}\n" if event else ""
     return f"{head}data: {json.dumps(obj)}\n\n"
+
+
+def _frame(event: dict) -> bytes:
+    """One AWS event-stream message, as bedrock-runtime InvokeModelWithResponseStream sends it."""
+    headers = b"".join(
+        bytes([len(k)]) + k.encode() + b"\x07" + struct.pack(">H", len(v)) + v.encode()
+        for k, v in (
+            (":event-type", "chunk"),
+            (":content-type", "application/json"),
+            (":message-type", "event"),
+        )
+    )
+    payload = json.dumps({"bytes": base64.b64encode(json.dumps(event).encode()).decode()}).encode()
+    prelude = struct.pack(">II", 16 + len(headers) + len(payload), len(headers))
+    msg = prelude + struct.pack(">I", zlib.crc32(prelude)) + headers + payload
+    return msg + struct.pack(">I", zlib.crc32(msg))
 
 
 def create_mock_app() -> FastAPI:
@@ -134,7 +154,13 @@ def create_mock_app() -> FastAPI:
                     "error": {"type": "invalid_request_error", "message": "missing version"},
                 },
             )
-        body = await request.json()
+        reply = anthropic_reply(await request.json())
+        if isinstance(reply, (dict, JSONResponse)):
+            return reply
+        return StreamingResponse(reply, media_type="text/event-stream")
+
+    def anthropic_reply(body: dict):
+        """Message dict, error response, or (stream) an iterator of SSE strings."""
         model = body.get("model", "")
         if "nonexistent" in model:
             return JSONResponse(
@@ -258,7 +284,7 @@ def create_mock_app() -> FastAPI:
             )
             yield _sse({"type": "message_stop"}, "message_stop")
 
-        return StreamingResponse(gen(), media_type="text/event-stream")
+        return gen()
 
     # ---------------------------------------------------------------- OpenAI Responses
     @app.post("/v1/responses")
@@ -365,6 +391,10 @@ def create_mock_app() -> FastAPI:
     @app.post("/model/{model_id:path}/invoke")
     async def invoke(model_id: str, request: Request):
         body = await request.json()
+        if "claude" in model_id:
+            if body.get("anthropic_version") != "bedrock-2023-05-31" or "model" in body:
+                return JSONResponse(status_code=400, content={"message": "Malformed input request"})
+            return anthropic_reply({**body, "model": model_id})
         if "titan-embed" in model_id:
             dims = body.get("dimensions") or 4
             return {"embedding": [0.25] * dims, "inputTextTokenCount": len(body["inputText"].split())}
@@ -373,6 +403,15 @@ def create_mock_app() -> FastAPI:
         if "cohere.embed" in model_id:
             return {"embeddings": [[0.5, 0.5] for _ in body["texts"]]}
         return JSONResponse(status_code=400, content={"message": f"Unsupported model {model_id}"})
+
+    @app.post("/model/{model_id:path}/invoke-with-response-stream")
+    async def invoke_stream(model_id: str, request: Request):
+        body = await request.json()
+        if body.get("anthropic_version") != "bedrock-2023-05-31" or "model" in body or "stream" in body:
+            return JSONResponse(status_code=400, content={"message": "Malformed input request"})
+        sse = anthropic_reply({**body, "model": model_id, "stream": True})
+        frames = (_frame(json.loads(s.split("data: ", 1)[1])) for s in sse)
+        return StreamingResponse(frames, media_type="application/vnd.amazon.eventstream")
 
     return app
 

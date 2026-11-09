@@ -96,6 +96,33 @@ def test_claude_style_ids_are_mapped(gateway, mock):
     assert last_call(mock, "/anthropic/v1/messages")["json"]["model"] == "anthropic.claude-opus-5-5"
 
 
+BEDROCK_CLAUDE = {"models": [{"id": "eu.anthropic.claude-sonnet-5-5", "alias": "sonnet", "api": "bedrock"}]}
+
+
+def test_claude_via_bedrock_runtime(gateway, mock):
+    client = gateway(models=BEDROCK_CLAUDE)
+    r = chat(client, "sonnet", reasoning_effort="low")
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "Hi from eu.anthropic.claude-sonnet-5-5"
+    sent = last_call(mock, "/model/")
+    assert sent["path"] == "/model/eu.anthropic.claude-sonnet-5-5/invoke"
+    assert sent["json"]["anthropic_version"] == "bedrock-2023-05-31"
+    assert sent["json"]["output_config"] == {"effort": "low"}
+
+
+def test_claude_stream_via_bedrock_runtime(gateway):
+    client = gateway(models=BEDROCK_CLAUDE)
+    r = chat(client, "sonnet", stream=True, tools=TOOLS, stream_options={"include_usage": True})
+    assert r.status_code == 200, r.text
+    events = sse_events(r.text)
+    assert events[-1] == "[DONE]"
+    deltas = [e["choices"][0]["delta"] for e in events[:-1] if e["choices"]]
+    assert {"reasoning_content": "Hmm."} in deltas
+    args = "".join(d["tool_calls"][0]["function"].get("arguments", "") for d in deltas if "tool_calls" in d)
+    assert args == '{"city": "Paris"}'
+    assert events[-2]["usage"]["completion_tokens"] == 12
+
+
 def test_gpt5_stream_via_responses(gateway, mock):
     client = gateway()
     r = chat(client, "openai.gpt-5.5", stream=True, max_tokens=100, temperature=0.3)

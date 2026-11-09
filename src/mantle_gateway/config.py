@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger(__name__)
 
-ApiKind = Literal["chat", "responses", "messages"]
+ApiKind = Literal["chat", "responses", "messages", "bedrock"]
 BaseKind = Literal["v1", "openai/v1"]
 ThinkingMode = Literal["adaptive", "budget", "none"]
 

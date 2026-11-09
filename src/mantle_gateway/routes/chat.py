@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..auth import require_api_key
 from ..catalog import NUMBERED_GPT_RE, ResolvedModel
 from ..config import Settings
+from ..sse import iter_bedrock_events
 from ..translate.chat_to_messages import (
     MessagesStreamTranslator,
     build_messages_request,
@@ -26,6 +28,9 @@ from .common import STREAM_HEADERS, inline_remote_images, read_json, relay_bytes
 
 log = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_api_key)])
+
+BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31"
+EVENTSTREAM = "application/vnd.amazon.eventstream"
 
 
 @router.post("/v1/chat/completions")
@@ -50,7 +55,7 @@ async def chat_completions(request: Request):
         model.base,
         stream,
     )
-    if model.api == "messages":
+    if model.api in ("messages", "bedrock"):
         return await _via_messages(body, model, settings, upstream, stream, include_usage)
     if model.api == "responses":
         return await _via_responses(body, model, settings, upstream, stream, include_usage)
@@ -71,15 +76,26 @@ async def _via_messages(
         block["source"] = {"type": "base64", "media_type": media_type, "data": data}
 
     await inline_remote_images(remote_image_urls(req), upstream.client, settings, set_source)
-    url = upstream.mantle("/anthropic/v1/messages")
-    headers = {"anthropic-version": settings.anthropic_version}
+    if model.api == "bedrock":
+        # bedrock-runtime InvokeModel takes the same Messages body, with the model in the URL and the
+        # version in the body. It reaches models (and eu./global. inference profiles) that Mantle's own
+        # catalogue lacks in a region.
+        req.pop("model")
+        req.pop("stream", None)
+        req["anthropic_version"] = BEDROCK_ANTHROPIC_VERSION
+        url = upstream.runtime(f"/model/{quote(model.upstream_id, safe='')}/invoke")
+        stream_url, headers, stream_headers = url + "-with-response-stream", {}, {"accept": EVENTSTREAM}
+    else:
+        url = stream_url = upstream.mantle("/anthropic/v1/messages")
+        headers = stream_headers = {"anthropic-version": settings.anthropic_version}
     if not stream:
         data = await upstream.request_json("POST", url, json_body=req, headers=headers)
         return JSONResponse(messages_response_to_chat(data, model.public_id, settings))
-    resp = await upstream.open_stream("POST", url, json_body=req, headers=headers)
+    resp = await upstream.open_stream("POST", stream_url, json_body=req, headers=stream_headers)
+    events = iter_bedrock_events(resp.aiter_bytes()) if model.api == "bedrock" else None
     translator = MessagesStreamTranslator(model.public_id, settings, include_usage)
     return StreamingResponse(
-        translate_stream(resp, translator), media_type="text/event-stream", headers=STREAM_HEADERS
+        translate_stream(resp, translator, events), media_type="text/event-stream", headers=STREAM_HEADERS
     )
 
 

@@ -40,10 +40,12 @@ async def read_json(request: Request) -> dict:
     return body
 
 
-async def translate_stream(resp: httpx.Response, translator) -> AsyncIterator[bytes]:
-    """Re-emit an upstream SSE stream as OpenAI chat.completion.chunk events."""
+async def translate_stream(
+    resp: httpx.Response, translator, events: AsyncIterator[tuple[str | None, str]] | None = None
+) -> AsyncIterator[bytes]:
+    """Re-emit an upstream stream (SSE unless `events` is given) as OpenAI chat.completion.chunk events."""
     try:
-        async for event, data in iter_sse(resp.aiter_lines()):
+        async for event, data in events or iter_sse(resp.aiter_lines()):
             if data.strip() == "[DONE]":
                 break
             try:

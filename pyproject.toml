@@ -1,6 +1,6 @@
 [project]
 name = "mantle-gateway"
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenAI-compatible gateway for Amazon Bedrock Mantle (Claude, GPT-5.x, open-weight models) for Open WebUI and friends"
 readme = "README.md"
 license = "MIT"

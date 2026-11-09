@@ -106,6 +106,8 @@ Routing rules (override with `api:` / `base:` per model):
 
 Anthropic-style IDs such as `claude-opus-5-5` are mapped to `anthropic.claude-opus-5-5` automatically.
 
+**`api: bedrock`** sends Claude to bedrock-runtime `InvokeModel` (same Messages translation, streamed over AWS event stream) instead of Mantle. Use it where Mantle's regional catalogue lacks a Claude model, or for `eu.` / `global.` inference profiles, which Mantle doesn't support. Mantle eu-west-2, for example, serves no Claude, while bedrock-runtime eu-west-2 has `anthropic.claude-opus-5-5` and `eu.anthropic.claude-sonnet-5-5`. Set the model's `id` to the Bedrock model or inference-profile ID. IAM needs `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on the model or profile. The `/v1/messages` passthrough still goes to Mantle.
+
 ## How requests are translated
 
 **Claude (Chat Completions → Anthropic Messages)**

@@ -80,7 +80,7 @@ def auto_forced_tool_choice(model_id: str) -> bool:
 
 
 def auto_allow_sampling(model_id: str, api: ApiKind) -> bool:
-    if api == "messages":
+    if api in ("messages", "bedrock"):
         # Current Claude models (4.7+, 5.x) reject temperature/top_p/top_k; older ones accept them
         # unless thinking is on (handled by the translator).
         return auto_thinking(model_id) == "budget"

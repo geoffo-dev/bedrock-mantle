@@ -51,7 +51,8 @@ models:
 #   alias              ID shown to clients (default: id)
 #   name               display name (Open WebUI shows it)
 #   type               chat | embedding
-#   api                chat | responses | messages
+#   api                chat | responses | messages | bedrock   (bedrock: Claude via bedrock-runtime
+#                      InvokeModel, for models / eu. inference profiles Mantle lacks in the region)
 #   base               v1 | openai/v1
 #   max_tokens         default max output tokens when the client sends none
 #   default_effort     low | medium | high | xhigh | max
