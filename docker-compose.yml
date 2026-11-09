@@ -1,0 +1,43 @@
+# Demo: Mantle Gateway + Open WebUI.
+#   cp .env.example .env   # set API_KEY and AWS credentials
+#   cp config/models.example.yaml config/models.yaml   # optional: edit aliases / allow-list
+#   docker compose up -d --build
+#   open http://localhost:3000
+services:
+  mantle-gateway:
+    build: .
+    image: ghcr.io/geoffo-dev/bedrock-mantle:latest
+    env_file: .env
+    ports:
+      - "8080:8080"         # optional: expose the OpenAI-compatible API to other tools on the host
+    volumes:
+      - ./config/models.example.yaml:/app/config/models.yaml:ro   # point at ./config/models.yaml once you have one
+      # IAM via an AWS profile instead of a Bedrock API key (set AWS_PROFILE in .env):
+      # - ~/.aws:/home/app/.aws:ro
+    environment:
+      HOME: /home/app
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    depends_on:
+      mantle-gateway:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    environment:
+      ENABLE_OLLAMA_API: "false"
+      OPENAI_API_BASE_URL: http://mantle-gateway:8080/v1
+      OPENAI_API_KEY: ${API_KEY}
+      # RAG embeddings through the gateway (Titan Text Embeddings v2 on bedrock-runtime)
+      RAG_EMBEDDING_ENGINE: openai
+      RAG_OPENAI_API_BASE_URL: http://mantle-gateway:8080/v1
+      RAG_OPENAI_API_KEY: ${API_KEY}
+      RAG_EMBEDDING_MODEL: titan-embed-v2
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-change-me-too}
+    volumes:
+      - open-webui:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  open-webui:

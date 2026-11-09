@@ -1,0 +1,25 @@
+# kubectl apply -k deploy/k8s     (after creating the Secret — see secret.example.yaml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mantle-gateway
+labels:
+  - pairs:
+      app.kubernetes.io/name: mantle-gateway
+    includeSelectors: true
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+configMapGenerator:
+  - name: mantle-gateway-models
+    files:
+      - models.yaml   # edit deploy/k8s/models.yaml (kustomize cannot read files outside this folder)
+  - name: mantle-gateway-env
+    literals:
+      - AWS_REGION=us-east-1
+      - LOG_LEVEL=INFO
+      - REASONING_FORMAT=reasoning_content
+images:
+  - name: ghcr.io/geoffo-dev/bedrock-mantle
+    newTag: latest   # pin a release tag or digest in production

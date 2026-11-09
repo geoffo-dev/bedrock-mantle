@@ -1,0 +1,45 @@
+[project]
+name = "mantle-gateway"
+version = "0.1.0"
+description = "OpenAI-compatible gateway for Amazon Bedrock Mantle (Claude, GPT-5.x, open-weight models) for Open WebUI and friends"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.28",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+    "pyyaml>=6.0",
+    "aws-bedrock-token-generator>=1.1.0",
+    "botocore>=1.35",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mantle_gateway"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["B008"]

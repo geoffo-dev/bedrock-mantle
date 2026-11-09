@@ -1,0 +1,38 @@
+# Try the gateway without AWS: a fake Mantle answers every call.
+#   docker compose -f docker-compose.mock.yml up -d --build
+#   curl -s localhost:8080/v1/models -H "Authorization: Bearer demo-key"
+# Add Open WebUI with: docker compose -f docker-compose.mock.yml --profile webui up -d
+services:
+  mock-mantle:
+    build: .
+    command: ["uvicorn", "tests.mock_mantle:app", "--host", "0.0.0.0", "--port", "9000"]
+    volumes:
+      - ./tests:/app/tests:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 9000), 2)"]
+      interval: 5s
+
+  mantle-gateway:
+    build: .
+    depends_on:
+      mock-mantle:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      API_KEY: demo-key
+      AWS_BEARER_TOKEN_BEDROCK: mock-token
+      MANTLE_BASE_URL: http://mock-mantle:9000
+      BEDROCK_RUNTIME_URL: http://mock-mantle:9000
+
+  open-webui:
+    profiles: ["webui"]
+    image: ghcr.io/open-webui/open-webui:main
+    depends_on: [mantle-gateway]
+    ports:
+      - "3000:8080"
+    environment:
+      ENABLE_OLLAMA_API: "false"
+      OPENAI_API_BASE_URL: http://mantle-gateway:8080/v1
+      OPENAI_API_KEY: demo-key
+      WEBUI_AUTH: "false"

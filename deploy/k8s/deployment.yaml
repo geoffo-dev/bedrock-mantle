@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mantle-gateway
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {}
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: {}
+    spec:
+      serviceAccountName: mantle-gateway
+      automountServiceAccountToken: true   # needed for IRSA / Pod Identity; set false with an API key
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/geoffo-dev/bedrock-mantle
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: mantle-gateway-env
+            - secretRef:
+                name: mantle-gateway   # API_KEY and (optionally) AWS_BEARER_TOKEN_BEDROCK
+          env:
+            - name: MODELS_CONFIG
+              value: /app/config/models.yaml
+          volumeMounts:
+            - name: models
+              mountPath: /app/config
+              readOnly: true
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: models
+          configMap:
+            name: mantle-gateway-models
+      terminationGracePeriodSeconds: 60   # let in-flight streams finish
