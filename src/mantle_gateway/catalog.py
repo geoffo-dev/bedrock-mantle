@@ -19,6 +19,9 @@ _CLAUDE_LEGACY_RE = re.compile(r"claude-(\d)(?:-(\d))?-(opus|sonnet|haiku)")
 NUMBERED_GPT_RE = re.compile(r"^openai\.gpt-(?!oss)")
 _OPENAI_V1_CHAT_RE = re.compile(r"^(google\.gemma-4|xai\.grok)")
 _EMBED_RE = re.compile(r"embed", re.IGNORECASE)
+# Cross-region inference: geographic/global system profiles, and any inference-profile ARN (an application
+# profile may wrap a cross-region one, and the gateway cannot tell).
+_CROSS_REGION_RE = re.compile(r"^(?:us|us-gov|eu|apac|jp|au|ca|global)\.|inference-profile/")
 
 
 @dataclass(frozen=True)
@@ -173,7 +176,12 @@ class Catalog:
                 return resolved
         return resolve_entry(name, entry)
 
+    def _region_blocked(self, upstream_id: str) -> bool:
+        return self.settings.in_region_only and bool(_CROSS_REGION_RE.search(upstream_id))
+
     def is_allowed(self, name: str) -> bool:
+        if self._region_blocked(self.resolve(name).upstream_id):
+            return False
         if not self.file.allow_list:
             return True
         return name in self._by_public or name in self._by_upstream
@@ -206,7 +214,7 @@ class Catalog:
         seen_upstream: set[str] = set()
         for entry in self.file.models:
             seen_upstream.add(entry.id)
-            if entry.hidden or entry.type == "embedding":
+            if entry.hidden or entry.type == "embedding" or self._region_blocked(entry.id):
                 continue
             rm = resolve_entry(entry.id, entry)
             out.append(_model_obj(rm.public_id, rm.name, rm.owned_by or "bedrock", created))

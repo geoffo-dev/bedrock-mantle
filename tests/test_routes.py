@@ -269,3 +269,23 @@ def test_iam_token_refresh_on_401(gateway, mock):
     assert r.status_code == 200
     auths = [c["headers"]["authorization"] for c in mock.state.calls if c["path"] == "/v1/chat/completions"]
     assert auths == [f"Bearer {EXPIRED_TOKEN}", "Bearer fresh-token"]
+
+
+def test_in_region_only_refuses_cross_region_profiles(gateway):
+    models = {"models": [*BEDROCK_CLAUDE["models"], {"id": "anthropic.claude-opus-5-5", "api": "bedrock"}]}
+    client = gateway(models=models, in_region_only=True)
+    listed = {m["id"] for m in client.get("/v1/models", headers=AUTH).json()["data"]}
+    assert "anthropic.claude-opus-5-5" in listed and "sonnet" not in listed
+    assert chat(client, "sonnet").status_code == 404
+    assert chat(client, "eu.anthropic.claude-haiku-5-5").status_code == 404
+    assert chat(client, "anthropic.claude-opus-5-5").status_code == 200
+    assert (
+        gateway(models=models)
+        .post(  # off by default
+            "/v1/chat/completions",
+            json={"model": "sonnet", "messages": [{"role": "user", "content": "x"}]},
+            headers=AUTH,
+        )
+        .status_code
+        == 200
+    )

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     mantle_base_url: str | None = None
     bedrock_runtime_url: str | None = None
     token_refresh_seconds: int = 600
+    # Refuse cross-region inference profiles (eu./us./global. ... IDs and inference-profile ARNs), so every
+    # request is processed in AWS_REGION. Mantle itself is always regional.
+    in_region_only: bool = False
 
     # Model catalog
     models_config: str | None = None

@@ -65,6 +65,7 @@ Mantle is regional. Set `AWS_REGION` to a Mantle region (for example `us-east-1`
 | `ALLOW_NO_AUTH` | `false` | Allow requests without a key (only for isolated networks). |
 | `AWS_REGION` | `us-east-1` | Mantle / bedrock-runtime region. |
 | `AWS_BEARER_TOKEN_BEDROCK` | – | Bedrock API key. If unset, tokens are minted from IAM credentials. |
+| `IN_REGION_ONLY` | `false` | Refuse and hide cross-region inference profiles (`eu.`/`us.`/`global.`… IDs, inference-profile ARNs), so all inference runs in `AWS_REGION`. Mantle is always regional. For a hard guarantee, also scope the IAM policy to that region. |
 | `MANTLE_BASE_URL` / `BEDROCK_RUNTIME_URL` | regional defaults | Endpoint overrides (VPC endpoints, testing). |
 | `MODELS_CONFIG` | `/app/config/models.yaml` | Path to the model catalog. |
 | `MODEL_DISCOVERY` | `true` | Merge Mantle's `/v1/models` into the list. |
